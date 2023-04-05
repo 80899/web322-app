@@ -1,12 +1,12 @@
 /*********************************************************************************
-*  WEB322 – Assignment 05
+*  WEB322 – Assignment 06
 *  I declare that this assignment is my own work in accordance with Seneca  Academic Policy.  No part of this
 *  assignment has been copied manually or electronically from any other source (including web sites) or 
 *  distributed to other students.
 * 
-*  Name: ______________________ Student ID: ______________ Date: ________________
+*  Name: __________Mohammad Hadian____________ Student ID: ______145753208________ Date: ____5 April____________
 *
-*  Online (Cyclic) Link: 
+*  Online (Cyclic) Link: https://smiling-purse-calf.cyclic.app
 *
 ********************************************************************************/
 
@@ -20,8 +20,10 @@ const exphbs = require("express-handlebars")
 const multer = require('multer')
 const cloudinary = require('cloudinary').v2
 const streamifier = require('streamifier')
+const clientSessions = require('client-sessions')
 
 var data = require("./data-service");
+const dataServiceAuth = require('./data-service-auth')
 
 
 const upload = multer()
@@ -37,6 +39,18 @@ cloudinary.config({
 
 var app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use(clientSessions({
+  cookieName: "session",
+  secret: "MohammadHadian",
+  duration: 10 * 60 * 1000,
+  activeDuration: 1000 * 60
+}))
+
+app.use(function (req, res, next) {
+  res.locals.session = req.session;
+  next();
+});
 
 app.engine('.hbs', exphbs.engine({
   extname: ".hbs", defaultLayout: "main", helpers: {
@@ -72,6 +86,7 @@ var HTTP_PORT = process.env.PORT || 8080;
 // call this function after the http server starts listening for requests
 function onHttpStart() {
   data.initialize()
+  dataServiceAuth.initialize()
   console.log("Express http server listening on: " + HTTP_PORT);
 }
 
@@ -91,7 +106,7 @@ app.get("/about", function (req, res) {
 
 
 
-app.get("/students", (req, res) => {
+app.get("/students", ensureLogin, (req, res) => {
   if (req.query.status) {
     data.getStudentsByStatus(req.query.status)
       .then((students) => {
@@ -136,13 +151,13 @@ app.get("/students", (req, res) => {
 });
 
 
-app.get("/students/add", function (req, res) {
+app.get("/students/add", ensureLogin, function (req, res) {
   data.getPrograms()
     .then(data => res.render("addStudent", { programs: data }))
     .catch(err => { res.render("addStudent", { programs: [] }); })
 });
 
-app.get("/student/:studentId", (req, res) => {
+app.get("/student/:studentId", ensureLogin, (req, res) => {
 
   // initialize an empty object to store the values
   let viewData = {};
@@ -183,11 +198,11 @@ app.get("/student/:studentId", (req, res) => {
 });
 
 
-app.get("/images/add", function (req, res) {
+app.get("/images/add", ensureLogin, function (req, res) {
   res.render('addImage')
 });
 
-app.post('/images/add', upload.single('imageFile'), (req, res) => {
+app.post('/images/add', ensureLogin, upload.single('imageFile'), (req, res) => {
   if (req.file) {
     let streamUpload = (req) => {
       return new Promise((resolve, reject) => {
@@ -235,7 +250,7 @@ app.post('/images/add', upload.single('imageFile'), (req, res) => {
 
 })
 
-app.get('/images', function (req, res) {
+app.get('/images', ensureLogin, function (req, res) {
   data.getImages().then(data => {
     if (data.length > 0) {
       res.render("images", { data: data })
@@ -253,7 +268,7 @@ app.get('/images', function (req, res) {
 //     res.send(err);
 //   });
 // });
-app.get("/programs", (req, res) => {
+app.get("/programs", ensureLogin, (req, res) => {
   data.getPrograms().then((data) => {
     if (data.length > 0) {
       res.render('programs', { programs: data })
@@ -264,32 +279,48 @@ app.get("/programs", (req, res) => {
     res.send(err);
   });
 });
-app.get('/programs/add', (req, res) => {
+app.get('/programs/add', ensureLogin, (req, res) => {
   res.render('addProgram')
 })
-app.get('/program/:pcode', (req, res) => {
+app.get('/program/:pcode', ensureLogin, (req, res) => {
   const pcode = req.params.pcode;
   data.getProgramByCode(pcode)
     .then((program) => res.render('program', { program: program }))
     .catch((err) => res.status(500).send("Error: " + err));
 })
 
-app.get('/programs/delete/:pcode', (req, res) => {
+app.get('/programs/delete/:pcode', ensureLogin, (req, res) => {
   data.deleteProgramByCode(req.params.pcode).then(() => {
     res.redirect('/programs')
   }).catch(err => {
     res.send("Unable to Remove Program / Program not found)").status(500)
   })
 })
-app.get('/students/delete/:studentID', (req, res) => {
+app.get('/students/delete/:studentID', ensureLogin, (req, res) => {
   data.deleteStudentById(req.params.studentID).then(() => {
     res.redirect('/students')
   }).catch(err => res.status(500).send('Unable to Remove Student / Student not found)'))
 })
+app.get('/login', (req, res) => {
+  res.render('login')
+})
+
+app.get('/register', (req, res) => {
+  res.render('register')
+})
+
+app.get('/userHistory', ensureLogin, (req, res) => {
+  res.render('userHistory')
+})
+
+app.get('/logout', (req, res) => {
+  req.session.reset();
+  res.redirect("/")
+})
 
 // Post routes
 // add the "POST" route for adding a new student
-app.post('/students/add', (req, res) => {
+app.post('/students/add', ensureLogin, (req, res) => {
   data.addStudent(req.body)
     .then(() => {
       res.redirect('/students');
@@ -300,13 +331,13 @@ app.post('/students/add', (req, res) => {
     });
 });
 
-app.post("/student/update", (req, res) => {
+app.post("/student/update", ensureLogin, (req, res) => {
   data.updateStudent(req.body).then(() => {
     res.redirect("/students");
   }).catch((err) => res.status(500).send("Error: " + err))
 });
 
-app.post('/programs/add', (req, res) => {
+app.post('/programs/add', ensureLogin, (req, res) => {
   data.addProgram(req.body)
     .then(() => {
       res.redirect('/programs');
@@ -317,12 +348,44 @@ app.post('/programs/add', (req, res) => {
     });
 })
 
-app.post('/program/update', (req, res) => {
+app.post('/program/update', ensureLogin, (req, res) => {
   data.updateProgram(req.body).then(() => {
     res.redirect("/programs");
   }).catch((err) => res.status(500).send("Error: " + err))
 })
+app.post('/login', (req, res) => {
+  req.body.userAgent = req.get('User-Agent');
+
+  dataServiceAuth.checkUser(req.body).then((user) => {
+
+    req.session.user = {
+      userName: user.userName,
+      email: user.email,
+      loginHistory: user.loginHistory
+    }
+
+    res.redirect('/students')
+  }).catch(err => {
+    res.render('login', { errorMessage: err, userName: req.body.userName })
+  })
+
+})
+app.post('/register', (req, res) => {
+  dataServiceAuth.registerUser(req.body).then(() => {
+    res.render('register', { successMessage: "User created" })
+  }).catch(err => {
+    res.render('register', { errorMessage: err, userName: req.body.userName })
+  })
+})
+
 
 // setup http server to listen on HTTP_PORT
 app.listen(HTTP_PORT, onHttpStart);
 
+function ensureLogin(req, res, next) {
+  if (!req.session.user) {
+    res.redirect("/login");
+  } else {
+    next();
+  }
+}
